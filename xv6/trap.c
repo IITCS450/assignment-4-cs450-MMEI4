@@ -77,6 +77,23 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
+  //Fault information
+  case T_PGFLT:{
+	uint va = rcr2();
+	if((tf->cs &3) ==0){
+		cprintf("kernel page fault: va=0x%x eip=0x%x\n", va, tf->eip);
+		panic("kernel page fault");
+	}
+	struct proc *p = myproc();
+    cprintf("pid %d (%s): page fault va=0x%x eip=0x%x",
+		p->pid, p->name, va, tf->eip);
+	if(va < PGSIZE){ 
+		cprintf("NULL deref");
+	}
+	cprintf("\n");
+	p->killed = 1;
+	break;
+  }
 
   //PAGEBREAK: 13
   default:
