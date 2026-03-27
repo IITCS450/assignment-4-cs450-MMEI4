@@ -322,7 +322,7 @@ copyuvm(pde_t *pgdir, uint sz)
 
   if((d = setupkvm()) == 0)
     return 0;
-  for(i = 0; i < sz; i += PGSIZE){
+  for(i = PGSIZE; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
     if(!(*pte & PTE_P))
@@ -385,6 +385,70 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   return 0;
 }
 
+int
+mprotect(void *addr, int len)
+{
+  uint a;
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  // Validate: addr must be page-aligned, len > 0
+  if(len <= 0 || (uint)addr % PGSIZE != 0)
+    return -1;
+
+  a = (uint)addr;
+  while(len > 0){
+    // Page must exist in user space
+    if(a >= p->sz)
+      return -1;
+
+    pte = walkpgdir(p->pgdir, (void*)a, 0);
+    if(pte == 0 || !(*pte & PTE_P))
+      return -1;
+
+    // Clear write permission
+    *pte &= ~PTE_W;
+
+    a   += PGSIZE;
+    len -= PGSIZE;
+  }
+
+  // Flush TLB so CPU sees updated PTEs
+  lcr3(V2P(p->pgdir));
+  return 0;
+}
+
+int
+munprotect(void *addr, int len)
+{
+  uint a;
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  // Validate: addr must be page-aligned, len > 0
+  if(len <= 0 || (uint)addr % PGSIZE != 0)
+    return -1;
+
+  a = (uint)addr;
+  while(len > 0){
+    if(a >= p->sz)
+      return -1;
+
+    pte = walkpgdir(p->pgdir, (void*)a, 0);
+    if(pte == 0 || !(*pte & PTE_P))
+      return -1;
+
+    // Restore write permission
+    *pte |= PTE_W;
+
+    a   += PGSIZE;
+    len -= PGSIZE;
+  }
+
+  // Flush TLB
+  lcr3(V2P(p->pgdir));
+  return 0;
+}
 //PAGEBREAK!
 // Blank page.
 //PAGEBREAK!
